@@ -1,0 +1,36 @@
+{
+  "title": "Control Room Agent",
+  "config": {
+    "step": {
+      "user": {
+        "title": "Connect to Control Room",
+        "description": "Connect this Home Assistant instance to the central Control Room broker using secure MQTT over WebSocket (WSS). Enter the host only, without `wss://`.",
+        "data": {
+          "host": "Broker host",
+          "port": "Port",
+          "websocket_path": "WebSocket path",
+          "site_id": "Site ID",
+          "username": "Username",
+          "password": "Password"
+        },
+        "data_description": {
+          "host": "For example: mqtt.example.com",
+          "port": "Usually 443 when using Cloudflare Tunnel.",
+          "websocket_path": "Usually /mqtt for EMQX.",
+          "site_id": "Unique technical identifier for this installation, for example site_001. Lowercase letters, numbers, underscores and hyphens are allowed.",
+          "username": "MQTT user dedicated to this site.",
+          "password": "Password for the MQTT user."
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Unable to connect to the Control Room broker.",
+      "invalid_auth": "The broker rejected the username or password.",
+      "invalid_site_id": "Invalid Site ID.",
+      "unknown": "Unexpected error."
+    },
+    "abort": {
+      "already_configured": "This Site ID is already configured."
+    }
+  }
+}

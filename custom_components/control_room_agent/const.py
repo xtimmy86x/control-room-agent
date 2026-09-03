@@ -1,0 +1,18 @@
+"""Constants for the Control Room Agent integration."""
+
+DOMAIN = "control_room_agent"
+NAME = "Control Room Agent"
+VERSION = "0.6.0"
+
+CONF_SITE_ID = "site_id"
+CONF_WEBSOCKET_PATH = "websocket_path"
+
+DEFAULT_PORT = 443
+DEFAULT_WEBSOCKET_PATH = "/mqtt"
+DEFAULT_HEARTBEAT_INTERVAL = 30
+DEFAULT_SYSTEM_INTERVAL = 60
+DEFAULT_INTEGRATIONS_INTERVAL = 300
+DEFAULT_ADDONS_INTERVAL = 300
+DEFAULT_PLC_INTERVAL = 30
+
+TOPIC_ROOT = "controlroom/v1/sites"
