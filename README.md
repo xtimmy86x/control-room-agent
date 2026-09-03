@@ -1,0 +1,125 @@
+# Control Room Agent
+
+Home Assistant custom integration that sends fleet telemetry to a central Control Room through **MQTT over secure WebSockets (WSS)**.
+
+The agent uses its own MQTT client, so it does **not** depend on or modify Home Assistant's built-in MQTT integration. A customer installation can therefore keep using its existing MQTT broker while the Control Room Agent connects independently to the central broker.
+
+## Features
+
+- Dedicated outbound WSS connection to the Control Room broker.
+- Per-site authentication and MQTT namespace.
+- Retained availability with MQTT Last Will (`online` / `offline`).
+- Heartbeat every 30 seconds.
+- Home Assistant version, installation type and runtime metadata.
+- CPU, RAM, disk, load and uptime telemetry.
+- Integration inventory and config-entry health.
+- Supervisor and add-on inventory when available.
+- Native `ha-s7plc` monitoring with PLC connectivity and entity counts.
+- Automatic reconnect with exponential backoff.
+- No dependency on the customer's Home Assistant MQTT integration.
+
+## Installation with HACS
+
+This repository can be installed as a **custom HACS integration**.
+
+1. Open **HACS** in Home Assistant.
+2. Open the menu and choose **Custom repositories**.
+3. Add:
+
+   ```text
+   https://github.com/xtimmy86x/control-room-agent
+   ```
+
+4. Select category **Integration**.
+5. Install **Control Room Agent**.
+6. Restart Home Assistant.
+7. Go to **Settings → Devices & services → Add integration → Control Room Agent**.
+
+GitHub releases are optional for HACS; when no release is published HACS installs from the repository's default branch.
+
+## Configuration
+
+Typical setup when EMQX is exposed through Cloudflare Tunnel:
+
+```text
+Host: mqtt.example.com
+Port: 443
+WebSocket path: /mqtt
+Site ID: site_001
+Username: site_001
+Password: ********
+```
+
+Enter the host **without** `wss://`.
+
+The config flow performs a real connection test before saving the entry.
+
+## MQTT topics
+
+For `site_001` the agent publishes under:
+
+```text
+controlroom/v1/sites/site_001/availability
+controlroom/v1/sites/site_001/heartbeat
+controlroom/v1/sites/site_001/homeassistant
+controlroom/v1/sites/site_001/system
+controlroom/v1/sites/site_001/integrations
+controlroom/v1/sites/site_001/addons
+controlroom/v1/sites/site_001/plc
+```
+
+Reserved command namespace:
+
+```text
+controlroom/v1/sites/site_001/commands/#
+```
+
+### Publish cadence
+
+| Topic | Cadence | Retained |
+| --- | --- | --- |
+| `availability` | connect/disconnect | yes |
+| `heartbeat` | immediately + every 30 s | yes |
+| `homeassistant` | on connection | yes |
+| `system` | immediately + every 60 s | yes |
+| `integrations` | immediately + every 5 min | yes |
+| `addons` | immediately + every 5 min | yes |
+| `plc` | immediately + every 30 s | yes |
+
+## Recommended EMQX permissions
+
+Create one MQTT user for each installation. Example for `site_001`:
+
+```text
+ALLOW Publish   controlroom/v1/sites/site_001/#
+ALLOW Subscribe controlroom/v1/sites/site_001/commands/#
+```
+
+Use **deny by default** on the broker so one customer cannot read or publish to another site's namespace.
+
+## Privacy and security
+
+The agent is intentionally conservative about the data it publishes. In particular, the PLC payload does not publish PLC IP addresses, rack/slot values, TSAP values, PLC memory addresses or entity configuration. Integration inventory does not publish config-entry data, options, tokens or credentials.
+
+The WSS connection uses the operating system trust store for TLS certificate verification.
+
+## ha-s7plc monitoring
+
+When [`ha-s7plc`](https://github.com/xtimmy86x/ha-s7plc) is installed, the agent publishes a privacy-safe summary including:
+
+- integration version;
+- configured PLC count;
+- connected/disconnected state;
+- Home Assistant config-entry state;
+- last update success;
+- entity counts.
+
+If `ha-s7plc` is not installed, the payload explicitly reports `supported: false`.
+
+## Current version
+
+`0.6.0`
+
+## Support
+
+Use the repository's [Issues](https://github.com/xtimmy86x/control-room-agent/issues) section for bugs and feature requests.
