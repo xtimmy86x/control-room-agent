@@ -1,7 +1,7 @@
 {
   "domain": "control_room_agent",
   "name": "Control Room Agent",
-  "version": "0.6.0",
+  "version": "0.6.1",
   "config_flow": true,
   "documentation": "https://github.com/xtimmy86x/control-room-agent",
   "issue_tracker": "https://github.com/xtimmy86x/control-room-agent/issues",

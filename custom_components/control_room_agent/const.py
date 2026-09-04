@@ -2,7 +2,7 @@
 
 DOMAIN = "control_room_agent"
 NAME = "Control Room Agent"
-VERSION = "0.6.0"
+VERSION = "0.6.1"
 
 CONF_SITE_ID = "site_id"
 CONF_WEBSOCKET_PATH = "websocket_path"

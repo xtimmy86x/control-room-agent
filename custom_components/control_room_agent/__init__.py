@@ -13,6 +13,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.system_info import async_get_system_info
 
 from .mqtt_client import ControlRoomMqttClient
+from .refresh_manager import EventDrivenRefreshManager
 from .system_metrics import prime_cpu_percent
 
 
@@ -74,11 +75,20 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     )
     entry.runtime_data = client
     await client.async_start()
+
+    refresh_manager = EventDrivenRefreshManager(hass, client)
+    refresh_manager.start()
+    client.event_refresh_manager = refresh_manager
+
     return True
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Unload a Control Room Agent config entry."""
     client: ControlRoomMqttClient = entry.runtime_data
+
+    if refresh_manager := getattr(client, "event_refresh_manager", None):
+        refresh_manager.stop()
+
     await client.async_stop()
     return True
