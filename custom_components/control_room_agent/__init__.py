@@ -15,6 +15,7 @@ from homeassistant.helpers.system_info import async_get_system_info
 from .mqtt_client import ControlRoomMqttClient
 from .refresh_manager import EventDrivenRefreshManager
 from .system_metrics import prime_cpu_percent
+from .updates_runtime import UpdatesPublisher
 
 
 def _get_process_started_at() -> datetime:
@@ -80,6 +81,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     refresh_manager.start()
     client.event_refresh_manager = refresh_manager
 
+    updates_publisher = UpdatesPublisher(hass, client)
+    updates_publisher.start()
+    client.updates_publisher = updates_publisher
+
     return True
 
 
@@ -89,6 +94,9 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     if refresh_manager := getattr(client, "event_refresh_manager", None):
         refresh_manager.stop()
+
+    if updates_publisher := getattr(client, "updates_publisher", None):
+        updates_publisher.stop()
 
     await client.async_stop()
     return True
