@@ -82,6 +82,78 @@ def _summary(addons: list[dict[str, Any]]) -> dict[str, int]:
     }
 
 
+def _empty_inventory(*, supported: bool) -> dict[str, Any]:
+    """Return a consistent empty inventory."""
+    return {
+        "supported": supported,
+        "available": False,
+        "summary": {
+            "addon_count": 0,
+            "started_count": 0,
+            "stopped_count": 0,
+            "other_state_count": 0,
+            "update_available_count": 0,
+        },
+        "addons": [],
+    }
+
+
+def _is_not_ready_error(err: Exception) -> bool:
+    """Recognize Supervisor-not-ready across Home Assistant versions."""
+    return err.__class__.__name__ == "HassioNotReadyError"
+
+
+def _call_hassio_getter(
+    module: Any,
+    name: str,
+    hass: HomeAssistant,
+) -> tuple[bool, Any]:
+    """Call an optional hassio cache getter across HA API generations.
+
+    Home Assistant 2025.10 exposes add-on data through ``get_addons_info``
+    plus ``get_supervisor_info()[\"addons\"]``. Newer HA versions also expose
+    ``get_addons_list`` (and temporarily ``get_apps_list`` as an alias).
+    """
+    getter = getattr(module, name, None)
+    if getter is None:
+        return False, None
+
+    try:
+        return True, getter(hass)
+    except Exception as err:  # noqa: BLE001 - compatibility boundary
+        if _is_not_ready_error(err):
+            return True, None
+        raise
+
+
+def _merge_addon_sources(
+    addons_raw: Any,
+    addons_info: Any,
+) -> list[dict[str, Any]]:
+    """Merge installed add-on summary and detailed cached information."""
+    merged: dict[str, dict[str, Any]] = {}
+
+    if isinstance(addons_raw, list):
+        for addon in addons_raw:
+            if not isinstance(addon, dict):
+                continue
+            slug = addon.get("slug")
+            if not slug:
+                continue
+            merged[str(slug)] = dict(addon)
+
+    if isinstance(addons_info, dict):
+        for slug, details in addons_info.items():
+            if not isinstance(details, dict):
+                continue
+            key = str(slug)
+            item = merged.setdefault(key, {"slug": key})
+            item.update(details)
+            item.setdefault("slug", key)
+
+    return list(merged.values())
+
+
 async def async_collect_addon_inventory(
     hass: HomeAssistant,
 ) -> dict[str, Any]:
@@ -90,48 +162,51 @@ async def async_collect_addon_inventory(
     Home Assistant Core/Container installations do not have Supervisor.
     In that case, publish an explicit unsupported state rather than
     treating the missing Supervisor as a collection error.
+
+    The hassio component changed its public cache helpers after HA 2025.10.
+    Keep this collector compatible with both the 2025.10 API and the newer
+    ``get_addons_list`` API without directly depending on deprecated names.
     """
     if not is_hassio(hass):
-        return {
-            "supported": False,
-            "available": False,
-            "summary": {
-                "addon_count": 0,
-                "started_count": 0,
-                "stopped_count": 0,
-                "other_state_count": 0,
-                "update_available_count": 0,
-            },
-            "addons": [],
-        }
+        return _empty_inventory(supported=False)
 
     # Local import keeps Supervisor-specific code out of non-Supervisor
     # installations and avoids importing more than necessary at startup.
     from homeassistant.components import hassio  # noqa: PLC0415
 
     try:
-        root_info = hassio.get_info(hass)
-        supervisor_info = hassio.get_supervisor_info(hass)
-        addons_raw = hassio.get_apps_list(hass)
-    except hassio.HassioNotReadyError:
-        return {
-            "supported": True,
-            "available": False,
-            "summary": {
-                "addon_count": 0,
-                "started_count": 0,
-                "stopped_count": 0,
-                "other_state_count": 0,
-                "update_available_count": 0,
-            },
-            "addons": [],
-        }
+        _, root_info = _call_hassio_getter(hassio, "get_info", hass)
+        _, supervisor_info = _call_hassio_getter(
+            hassio,
+            "get_supervisor_info",
+            hass,
+        )
+    except Exception as err:  # noqa: BLE001 - compatibility boundary
+        if _is_not_ready_error(err):
+            return _empty_inventory(supported=True)
+        raise
+
+    if not isinstance(supervisor_info, dict):
+        return _empty_inventory(supported=True)
+
+    # Newer HA versions expose the installed list explicitly. HA 2025.10.3
+    # does not; there the installed add-on summary is folded into
+    # supervisor_info["addons"].
+    _, addons_raw = _call_hassio_getter(hassio, "get_addons_list", hass)
+    if not isinstance(addons_raw, list):
+        _, addons_raw = _call_hassio_getter(hassio, "get_apps_list", hass)
+    if not isinstance(addons_raw, list):
+        addons_raw = supervisor_info.get("addons", [])
+
+    # Detailed cached information adds fields such as auto_update/startup when
+    # available. On HA 2025.10 this is the authoritative complementary cache.
+    _, addons_info = _call_hassio_getter(hassio, "get_addons_info", hass)
+    merged_addons = _merge_addon_sources(addons_raw, addons_info)
 
     addons = [
         normalized
-        for addon in addons_raw
-        if isinstance(addon, dict)
-        and (normalized := _normalize_addon(addon))
+        for addon in merged_addons
+        if (normalized := _normalize_addon(addon))
     ]
 
     # Keep ordering stable so retained payloads are easy to diff.
@@ -142,10 +217,7 @@ async def async_collect_addon_inventory(
         )
     )
 
-    supervisor = _filtered_dict(
-        supervisor_info if isinstance(supervisor_info, dict) else {},
-        _SUPERVISOR_FIELDS,
-    )
+    supervisor = _filtered_dict(supervisor_info, _SUPERVISOR_FIELDS)
 
     # Root Supervisor info owns health/support status. These values are
     # intentionally kept separate from "supported", which here means
@@ -154,19 +226,15 @@ async def async_collect_addon_inventory(
         if root_info.get("healthy") is not None:
             supervisor["healthy"] = bool(root_info["healthy"])
         if root_info.get("supported") is not None:
-            supervisor["system_supported"] = bool(
-                root_info["supported"]
-            )
+            supervisor["system_supported"] = bool(root_info["supported"])
 
-        # Some HA versions expose the installed Supervisor version on
-        # root info rather than supervisor info.
+        # Some HA versions expose the installed Supervisor version on root
+        # info rather than supervisor info.
         if (
             "version" not in supervisor
             and root_info.get("supervisor") is not None
         ):
-            supervisor["version"] = _json_safe_value(
-                root_info["supervisor"]
-            )
+            supervisor["version"] = _json_safe_value(root_info["supervisor"])
 
     return {
         "supported": True,
