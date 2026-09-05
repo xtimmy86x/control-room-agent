@@ -4,6 +4,16 @@ Home Assistant custom integration that sends fleet telemetry to a central Contro
 
 The agent uses its own MQTT client, so it does **not** depend on or modify Home Assistant's built-in MQTT integration. A customer installation can therefore keep using its existing MQTT broker while the Control Room Agent connects independently to the central broker.
 
+## What's new in 0.7.1
+
+Fixes Supervisor/add-on inventory collection on **Home Assistant 2025.10.x** while preserving compatibility with newer Home Assistant releases.
+
+- no longer assumes the newer `hassio.get_addons_list()` / `get_apps_list()` API exists;
+- uses the HA 2025.10 Supervisor caches (`get_addons_info()` plus `supervisor_info["addons"]`) when required;
+- automatically uses the newer add-on list API when available;
+- handles the Supervisor-not-ready behavior across both API generations;
+- keeps the same privacy-safe add-on payload and update counters.
+
 ## What's new in 0.7.0
 
 The agent now publishes a centralized, privacy-safe inventory of Home Assistant `update` entities.
@@ -142,7 +152,7 @@ If `ha-s7plc` is not installed, the payload explicitly reports `supported: false
 
 ## Current version
 
-`0.7.0`
+`0.7.1`
 
 ## Support
 
